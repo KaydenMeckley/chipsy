@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chipsy Bakery — My Account</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body data-page="account">
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="about.html"><span class="logo">🧁</span> Chipsy</a>
+    <nav class="tabs">
+      <a href="about.html">About Us</a>
+      <a href="menu.html">Order</a>
+      <a href="descriptions.html">Menu &amp; Ingredients</a>
+      <a href="reviews.html">Reviews</a>
+      <a href="checkout.html">Cart <span class="cart-count" data-cart-count style="display:none">0</span></a>
+      <a href="account.html" class="active">Account</a>
+      <a href="analytics.html" class="private" title="Private – owners only">Analytics</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap narrow">
+  <h1 class="page-title">My Account</h1>
+  <p class="subtitle">Sign in to earn reward points on every order.</p>
+
+  <div id="account-body"></div>
+</div>
+
+<footer>Chipsy Bakery · Made fresh daily 🧁</footer>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+<script src="account.js"></script>
+<script>
+  const body = document.getElementById("account-body");
+
+  function stars() {} // placeholder (not used here)
+
+  function renderLoggedOut(activeTab) {
+    activeTab = activeTab || "login";
+    body.innerHTML = `
+      <div class="fulfillment" style="margin-bottom:22px;">
+        <label><input type="radio" name="authtab" value="login" ${activeTab==="login"?"checked":""}>
+          <span>Log in</span></label>
+        <label><input type="radio" name="authtab" value="signup" ${activeTab==="signup"?"checked":""}>
+          <span>Create account</span></label>
+      </div>
+
+      <div class="card" id="login-card" style="display:${activeTab==="login"?"block":"none"}">
+        <h2 style="margin-top:0;">Log in</h2>
+        <div class="field"><label>Email</label><input type="email" id="li-email" placeholder="you@example.com"></div>
+        <div class="field"><label>Password</label><input type="password" id="li-pass" placeholder="Your password"></div>
+        <button class="btn" id="li-btn">Log in</button>
+      </div>
+
+      <div class="card" id="signup-card" style="display:${activeTab==="signup"?"block":"none"}">
+        <h2 style="margin-top:0;">Create account</h2>
+        <p style="color:var(--brown);margin-top:0;">🎁 Get <strong>${WELCOME_BONUS} bonus points</strong> just for signing up!</p>
+        <div class="field"><label>Name</label><input type="text" id="su-name" placeholder="Your name"></div>
+        <div class="field"><label>Email</label><input type="email" id="su-email" placeholder="you@example.com"></div>
+        <div class="field"><label>Password</label><input type="password" id="su-pass" placeholder="Choose a password"></div>
+        <button class="btn" id="su-btn">Create account &amp; get ${WELCOME_BONUS} points</button>
+      </div>`;
+
+    body.querySelectorAll('input[name="authtab"]').forEach(r =>
+      r.addEventListener("change", () => renderLoggedOut(
+        document.querySelector('input[name="authtab"]:checked').value)));
+
+    document.getElementById("li-btn").addEventListener("click", () => {
+      const res = logIn(document.getElementById("li-email").value, document.getElementById("li-pass").value);
+      toast(res.msg);
+      if (res.ok) render();
+    });
+    document.getElementById("su-btn").addEventListener("click", () => {
+      const res = signUp(
+        document.getElementById("su-name").value,
+        document.getElementById("su-email").value,
+        document.getElementById("su-pass").value);
+      toast(res.msg);
+      if (res.ok) render();
+    });
+  }
+
+  function renderLoggedIn(user) {
+    const nextTier = 100;
+    const toNext = Math.max(0, nextTier - (user.points % nextTier));
+    const rows = (user.orders || []).slice().reverse().map(o => `
+      <tr>
+        <td>${new Date(o.when).toLocaleDateString()}</td>
+        <td>${(o.items || []).reduce((s, i) => s + i.qty, 0)} item(s)</td>
+        <td>${o.fulfillment}</td>
+        <td>${money(o.total)}</td>
+        <td>+${o.pointsEarned || 0}</td>
+      </tr>`).join("");
+
+    body.innerHTML = `
+      <div class="card" style="text-align:center;">
+        <p style="margin:0;color:var(--brown);">Signed in as <strong>${user.name}</strong> (${user.email})</p>
+        <div class="num" style="font-size:3.2rem;font-family:var(--font-head);color:var(--caramel-dark);margin:8px 0;">
+          ${user.points} <span style="font-size:1.2rem;">points</span></div>
+        <p style="color:var(--brown);margin:0;">Earn <strong>${POINTS_PER_DOLLAR} point per $1</strong> spent.
+          ${toNext} points to your next $5 reward (every 100 points).</p>
+        <div style="margin-top:16px;">
+          <a class="btn" href="menu.html">Order &amp; earn points</a>
+          <button class="btn secondary" id="logout-btn">Log out</button>
+        </div>
+      </div>
+
+      <h2 style="margin-top:32px;">Your rewards</h2>
+      <div class="allergy-note" style="background:#FFF6EA;border-color:var(--caramel);color:var(--brown-dark)">
+        🎁 <strong>How rewards work:</strong> every <strong>100 points = $5 off</strong> a future order.
+        Redeeming at checkout is coming soon — your points keep adding up in the meantime.
+      </div>
+
+      <h2 style="margin-top:24px;">Order history</h2>
+      ${ (user.orders && user.orders.length) ? `
+        <table>
+          <thead><tr><th>Date</th><th>Items</th><th>Type</th><th>Total</th><th>Points</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>` : `<div class="empty">No orders yet — <a href="menu.html">start an order</a> to earn points.</div>` }`;
+
+    document.getElementById("logout-btn").addEventListener("click", () => {
+      logOut(); toast("Logged out."); render();
+    });
+  }
+
+  function render() {
+    const user = currentUser();
+    if (user) renderLoggedIn(user);
+    else renderLoggedOut("login");
+  }
+
+  render();
+</script>
+</body>
+</html>

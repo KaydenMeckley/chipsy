@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chipsy Bakery — Menu &amp; Ingredients</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body data-page="descriptions">
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="about.html"><span class="logo">🧁</span> Chipsy</a>
+    <nav class="tabs">
+      <a href="about.html">About Us</a>
+      <a href="menu.html">Order</a>
+      <a href="descriptions.html" class="active">Menu &amp; Ingredients</a>
+      <a href="reviews.html">Reviews</a>
+      <a href="checkout.html">Cart <span class="cart-count" data-cart-count style="display:none">0</span></a>
+      <a href="account.html">Account</a>
+      <a href="analytics.html" class="private" title="Private – owners only">Analytics</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap">
+  <h1 class="page-title">Menu, Descriptions &amp; Ingredients</h1>
+  <p class="subtitle">Everything we bake, with full ingredient lists and allergy information.</p>
+
+  <div class="allergy-note">
+    ⚠ <strong>Allergen key:</strong> Red tags show allergens an item <em>contains</em>.
+    Green tags show <em>dietary options</em> (e.g. vegan, gluten-free). If you have a
+    severe allergy, please check with us directly before ordering.
+  </div>
+
+  <div id="desc-grid" class="grid"></div>
+</div>
+
+<footer>Chipsy Bakery · Made fresh daily 🧁</footer>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+<script>
+  const grid = document.getElementById("desc-grid");
+
+  function tags(item) {
+    let html = "";
+    (item.allergens || []).forEach(a => html += `<span class="tag allergen">Contains ${a}</span>`);
+    (item.dietary   || []).forEach(d => html += `<span class="tag dietary">${d}</span>`);
+    return html ? `<div class="tags">${html}</div>` : `<div class="tags"><span class="tag dietary">no allergens listed</span></div>`;
+  }
+
+  function imageBlock(item) {
+    if (item.image) {
+      return `<div class="card-img"><img src="${item.image}" alt="${item.name || 'baked good'}"
+        onerror="this.parentNode.innerHTML='<div class=\\'placeholder\\'><span class=\\'emoji\\'>🧁</span><span class=\\'hint\\'>Add a photo</span></div>'"></div>`;
+    }
+    return `<div class="card-img"><div class="placeholder">
+      <span class="emoji">🧁</span><span class="hint">Photo goes here</span></div></div>`;
+  }
+
+  const items = MENU_ITEMS.filter(i => i.name);
+  if (items.length === 0) {
+    grid.innerHTML = `<div class="fill-in" style="grid-column:1/-1">
+      <strong>✏️ No items yet.</strong> Fill in your baked goods in <strong>data.js</strong>
+      (name, description, ingredients, allergens) and they'll show up here.</div>`;
+  } else {
+    items.forEach(item => {
+      const card = document.createElement("div");
+      card.className = "card product-card";
+      card.innerHTML = `
+        ${imageBlock(item)}
+        <div class="card-body">
+          <h3>${item.name}</h3>
+          <p class="desc">${item.description || "<em>No description yet.</em>"}</p>
+          <p><strong>Ingredients:</strong> ${item.ingredients || "<em>Not listed yet.</em>"}</p>
+          ${tags(item)}
+        </div>`;
+      grid.appendChild(card);
+    });
+  }
+</script>
+</body>
+</html>

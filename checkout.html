@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chipsy Bakery — Checkout</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body data-page="checkout">
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="about.html"><span class="logo">🧁</span> Chipsy</a>
+    <nav class="tabs">
+      <a href="about.html">About Us</a>
+      <a href="menu.html">Order</a>
+      <a href="descriptions.html">Menu &amp; Ingredients</a>
+      <a href="reviews.html">Reviews</a>
+      <a href="checkout.html" class="active">Cart <span class="cart-count" data-cart-count style="display:none">0</span></a>
+      <a href="account.html">Account</a>
+      <a href="analytics.html" class="private" title="Private – owners only">Analytics</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap narrow">
+  <h1 class="page-title">Checkout</h1>
+  <p class="subtitle">Review your order, choose delivery or pick up, and pay.</p>
+
+  <a class="btn secondary" href="menu.html">← Back to menu (keeps your cart)</a>
+
+  <div id="checkout-body">
+    <!-- cart + form injected here -->
+  </div>
+</div>
+
+<footer>Chipsy Bakery · Made fresh daily 🧁</footer>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+<script src="account.js"></script>
+<script>
+  const body = document.getElementById("checkout-body");
+  const DELIVERY_FEE = 5.00;
+
+  function selectedFulfillment() {
+    const el = document.querySelector('input[name="fulfillment"]:checked');
+    return el ? el.value : "pickup";
+  }
+  function currentTotal() {
+    return cartTotal() + (selectedFulfillment() === "delivery" ? DELIVERY_FEE : 0);
+  }
+  function updateTotals() {
+    const isDelivery = selectedFulfillment() === "delivery";
+    const feeLine = document.getElementById("fee-line");
+    if (feeLine) feeLine.style.display = isDelivery ? "flex" : "none";
+    const total = currentTotal();
+    const gt = document.getElementById("grand-total");
+    const pa = document.getElementById("pay-amount");
+    if (gt) gt.textContent = money(total);
+    if (pa) pa.textContent = money(total);
+    const note = document.getElementById("points-note");
+    if (note) note.innerHTML = `🎁 You'll earn <strong>${Math.round(total * POINTS_PER_DOLLAR)} points</strong> on this order.`;
+  }
+
+  function render() {
+    const lines = cartDetailed();
+
+    if (lines.length === 0) {
+      body.innerHTML = `<div class="empty">
+        <h2>Your cart is empty</h2>
+        <p>Head to the menu to add some baked goods.</p>
+        <a class="btn" href="menu.html">Go to Menu</a></div>`;
+      return;
+    }
+
+    let cartHtml = `<div class="card" style="margin-top:20px;">`;
+    lines.forEach(l => {
+      cartHtml += `<div class="cart-line">
+        <span class="name">${l.item.name || "Item"}</span>
+        <span style="color:var(--brown)">${l.qty} × ${money(l.item.price)}</span>
+        <span class="line-total">${money(l.lineTotal)}</span>
+      </div>`;
+    });
+    cartHtml += `<div class="cart-line" id="fee-line" style="display:none;">
+      <span class="name">Delivery fee</span>
+      <span style="color:var(--brown)">flat rate</span>
+      <span class="line-total">${money(DELIVERY_FEE)}</span>
+    </div>`;
+    cartHtml += `<div class="cart-total"><span>Total</span><span id="grand-total">${money(cartTotal())}</span></div></div>`;
+
+    const formHtml = `
+      <h2 style="margin-top:34px;">How would you like your order?</h2>
+      <div class="fulfillment">
+        <label><input type="radio" name="fulfillment" value="pickup" checked>
+          <span>🏪 Pick up</span></label>
+        <label><input type="radio" name="fulfillment" value="delivery">
+          <span>🚚 Delivery</span></label>
+      </div>
+
+      <div id="delivery-fields" style="display:none; margin-top:18px;">
+        <div class="field"><label>Delivery address</label>
+          <input type="text" id="address" placeholder="Street, city, ZIP"></div>
+      </div>
+
+      <h2 style="margin-top:30px;">Your details</h2>
+      <div class="field"><label>Name</label><input type="text" id="cust-name" placeholder="Full name"></div>
+      <div class="field"><label>Email</label><input type="email" id="cust-email" placeholder="you@example.com"></div>
+      <div class="field"><label>Phone</label><input type="tel" id="cust-phone" placeholder="(555) 555-5555"></div>
+
+      <h2 style="margin-top:30px;">Payment</h2>
+      <div class="allergy-note" style="background:#FFF6EA;border-color:var(--caramel);color:var(--brown-dark)">
+        💳 <strong>Note for owners:</strong> These payment fields are placeholders.
+        Connect a real payment provider (Square, Stripe, PayPal, etc.) before going live.
+      </div>
+      <div class="field"><label>Name on card</label><input type="text" id="card-name" placeholder="Name on card"></div>
+      <div class="field"><label>Card number</label><input type="text" id="card-num" placeholder="1234 5678 9012 3456"></div>
+      <div class="field" style="display:flex; gap:14px;">
+        <div style="flex:1"><label>Expiry</label><input type="text" id="card-exp" placeholder="MM/YY"></div>
+        <div style="flex:1"><label>CVC</label><input type="text" id="card-cvc" placeholder="123"></div>
+      </div>
+
+      <button id="pay-btn" class="btn big" style="margin-top:14px;">Pay <span id="pay-amount">${money(cartTotal())}</span> &amp; Place Order</button>
+    `;
+
+    body.innerHTML = cartHtml + formHtml;
+
+    // toggle delivery address
+    body.querySelectorAll('input[name="fulfillment"]').forEach(r => {
+      r.addEventListener("change", () => {
+        document.getElementById("delivery-fields").style.display =
+          selectedFulfillment() === "delivery" ? "block" : "none";
+        updateTotals();
+      });
+    });
+
+    updateTotals();
+
+    // Pre-fill details + points note for logged-in customers
+    const user = currentUser();
+    if (user) {
+      document.getElementById("cust-name").value = user.name;
+      document.getElementById("cust-email").value = user.email;
+      const note = document.createElement("p");
+      note.className = "subtitle";
+      note.style.marginTop = "6px";
+      note.innerHTML = `🎁 You'll earn <strong>${Math.round(currentTotal() * POINTS_PER_DOLLAR)} points</strong> on this order.`;
+      note.id = "points-note";
+      document.getElementById("pay-btn").insertAdjacentElement("afterend", note);
+    } else {
+      const note = document.createElement("p");
+      note.className = "subtitle";
+      note.style.marginTop = "6px";
+      note.innerHTML = `💡 <a href="account.html">Log in or create an account</a> to earn reward points on this order.`;
+      document.getElementById("pay-btn").insertAdjacentElement("afterend", note);
+    }
+
+    document.getElementById("pay-btn").addEventListener("click", placeOrder);
+  }
+
+  function placeOrder() {
+    const name = document.getElementById("cust-name").value.trim();
+    const fulfillment = document.querySelector('input[name="fulfillment"]:checked').value;
+    if (!name) { toast("Please enter your name."); return; }
+    if (fulfillment === "delivery" && !document.getElementById("address").value.trim()) {
+      toast("Please enter a delivery address."); return;
+    }
+
+    const fee = fulfillment === "delivery" ? DELIVERY_FEE : 0;
+    const order = {
+      when: new Date().toISOString(),
+      name,
+      email: (document.getElementById("cust-email").value || "").trim().toLowerCase(),
+      fulfillment,
+      items: cartDetailed().map(l => ({ name: l.item.name, qty: l.qty, price: l.item.price })),
+      subtotal: cartTotal(),
+      deliveryFee: fee,
+      total: cartTotal() + fee
+    };
+    recordOrder(order);
+    const pointsEarned = addPointsForOrder(order); // 0 if not logged in
+    clearCart();
+
+    const pointsMsg = pointsEarned > 0
+      ? `<p style="color:var(--caramel-dark);font-weight:700;">🎁 You earned ${pointsEarned} reward points! <a href="account.html">View your account</a></p>`
+      : `<p style="color:var(--brown)"><a href="account.html">Create an account</a> to earn points on your next order.</p>`;
+
+    body.innerHTML = `<div class="empty">
+      <h2>🎉 Thank you, ${name}!</h2>
+      <p>Your order has been placed for <strong>${fulfillment === "delivery" ? "delivery" : "pick up"}</strong>.</p>
+      <p style="color:var(--brown)">Total paid: ${money(order.total)}</p>
+      ${pointsMsg}
+      <a class="btn" href="menu.html">Order more</a></div>`;
+    updateCartBadge();
+  }
+
+  render();
+</script>
+</body>
+</html>

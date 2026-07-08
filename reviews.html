@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chipsy Bakery — Reviews</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body data-page="reviews">
+
+<header class="topbar">
+  <div class="topbar-inner">
+    <a class="brand" href="about.html"><span class="logo">🧁</span> Chipsy</a>
+    <nav class="tabs">
+      <a href="about.html">About Us</a>
+      <a href="menu.html">Order</a>
+      <a href="descriptions.html">Menu &amp; Ingredients</a>
+      <a href="reviews.html" class="active">Reviews</a>
+      <a href="checkout.html">Cart <span class="cart-count" data-cart-count style="display:none">0</span></a>
+      <a href="account.html">Account</a>
+      <a href="analytics.html" class="private" title="Private – owners only">Analytics</a>
+    </nav>
+  </div>
+</header>
+
+<div class="wrap narrow">
+  <h1 class="page-title">Customer Reviews</h1>
+  <p class="subtitle">See what people are saying — and leave your own review.</p>
+
+  <div id="review-form"></div>
+
+  <h2 style="margin-top:34px;">What customers say</h2>
+  <div id="reviews-list"></div>
+</div>
+
+<footer>Chipsy Bakery · Made fresh daily 🧁</footer>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+<script src="account.js"></script>
+<script>
+  const REVIEWS_KEY = "chipsy_reviews";
+  const listEl = document.getElementById("reviews-list");
+  const formEl = document.getElementById("review-form");
+
+  function getReviews() { return load(REVIEWS_KEY, []); }
+  function saveReviews(r) { save(REVIEWS_KEY, r); }
+  function stars(n) { return "★★★★★".slice(0, n) + "☆☆☆☆☆".slice(0, 5 - n); }
+  function esc(s) { return (s || "").replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c])); }
+  function newId() { return "r" + Date.now() + "-" + Math.floor(Math.random() * 10000); }
+
+  /* ---------- Review submission form ---------- */
+  function renderForm() {
+    const user = currentUser();
+    const verified = user && hasPurchased(user.email);
+
+    let banner = "";
+    if (user) {
+      banner = verified
+        ? `<p style="color:var(--sage);margin-top:0;font-weight:700;">✓ You have a purchase on file — your review will be marked <strong>Verified Purchase</strong>.</p>`
+        : `<p style="color:var(--brown);margin-top:0;">Posting as <strong>${esc(user.name)}</strong>. Place an order to get the <strong>Verified Purchase</strong> badge.</p>`;
+    } else {
+      banner = `<p style="color:var(--brown);margin-top:0;">💡 <a href="account.html">Log in</a> to post a verified review and reply to others.</p>`;
+    }
+
+    formEl.innerHTML = `
+      <div class="card">
+        <h2 style="margin-top:0;">Leave a review</h2>
+        ${banner}
+        <div class="field"><label>Your name</label>
+          <input type="text" id="rev-name" placeholder="Your name"
+            value="${user ? esc(user.name) : ""}" ${user ? "readonly" : ""}></div>
+        <div class="field"><label>Rating</label>
+          <select id="rev-rating">
+            <option value="5">★★★★★ — Excellent</option>
+            <option value="4">★★★★ — Great</option>
+            <option value="3">★★★ — Good</option>
+            <option value="2">★★ — Okay</option>
+            <option value="1">★ — Poor</option>
+          </select>
+        </div>
+        <div class="field"><label>Your review</label>
+          <textarea id="rev-text" rows="3" placeholder="Tell us what you loved!"></textarea></div>
+        <div class="field"><label>Add a photo <span style="color:var(--brown);font-weight:400;">(optional)</span></label>
+          <input type="file" id="rev-photo" accept="image/*">
+          <div id="rev-photo-preview"></div></div>
+        <button class="btn" id="rev-submit">Post review</button>
+      </div>`;
+
+    document.getElementById("rev-submit").addEventListener("click", submitReview);
+
+    // live thumbnail preview of a chosen photo
+    document.getElementById("rev-photo").addEventListener("change", e => {
+      const prev = document.getElementById("rev-photo-preview");
+      const file = e.target.files[0];
+      if (!file) { prev.innerHTML = ""; return; }
+      fileToResizedDataURL(file, 900, data => {
+        prev.innerHTML = data
+          ? `<img class="review-photo" src="${data}" alt="preview">`
+          : `<span style="color:var(--warn)">Couldn't read that image.</span>`;
+      });
+    });
+  }
+
+  /* Read an image file and shrink it to a data URL so it fits in storage */
+  function fileToResizedDataURL(file, maxDim, cb) {
+    const reader = new FileReader();
+    reader.onload = e => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.width, h = img.height;
+        if (w > maxDim || h > maxDim) {
+          const scale = maxDim / Math.max(w, h);
+          w = Math.round(w * scale); h = Math.round(h * scale);
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        canvas.getContext("2d").drawImage(img, 0, 0, w, h);
+        cb(canvas.toDataURL("image/jpeg", 0.75));
+      };
+      img.onerror = () => cb(null);
+      img.src = e.target.result;
+    };
+    reader.onerror = () => cb(null);
+    reader.readAsDataURL(file);
+  }
+
+  function submitReview() {
+    const user = currentUser();
+    const name = (user ? user.name : document.getElementById("rev-name").value.trim()) || "Anonymous";
+    const email = user ? user.email : "";
+    const rating = parseInt(document.getElementById("rev-rating").value, 10);
+    const text = document.getElementById("rev-text").value.trim();
+    if (!text) { toast("Please write a short review."); return; }
+
+    const file = document.getElementById("rev-photo").files[0];
+
+    const finish = (imageData) => {
+      const reviews = getReviews();
+      reviews.push({
+        id: newId(),
+        name, email, rating, text,
+        image: imageData || "",
+        verified: !!(user && hasPurchased(email)),
+        replies: [],
+        date: new Date().toISOString()
+      });
+      try {
+        saveReviews(reviews);
+      } catch (err) {
+        toast("Couldn't save — storage is full. Try a smaller photo.");
+        return;
+      }
+      toast("Thanks for your review! 🌟");
+      render();
+    };
+
+    if (file) { fileToResizedDataURL(file, 900, finish); }
+    else { finish(""); }
+  }
+
+  /* ---------- Reviews list + replies ---------- */
+  function renderList() {
+    const reviews = getReviews();
+    const user = currentUser();
+
+    if (reviews.length === 0) {
+      listEl.innerHTML = `<div class="empty">No reviews yet — be the first! 🌟</div>`;
+      return;
+    }
+
+    listEl.innerHTML = "";
+    reviews.slice().reverse().forEach(r => {
+      const badge = r.verified
+        ? `<span class="tag dietary" style="margin-left:8px;vertical-align:middle;">Verified Purchase</span>` : "";
+
+      const repliesHtml = (r.replies || []).map(rep => `
+        <div class="reply">
+          <div class="who">${esc(rep.name)} <span class="date">· ${new Date(rep.date).toLocaleDateString()}</span></div>
+          <p style="margin:2px 0 0;">${esc(rep.text)}</p>
+        </div>`).join("");
+
+      const replyForm = user
+        ? `<div class="reply-form">
+             <textarea rows="2" placeholder="Write a reply…" data-reply-input="${r.id}"></textarea>
+             <button class="btn secondary" data-reply-btn="${r.id}">Reply</button>
+           </div>`
+        : `<p class="reply-login"><a href="account.html">Log in</a> to reply.</p>`;
+
+      const el = document.createElement("div");
+      el.className = "review";
+      el.innerHTML = `
+        <div class="stars">${stars(r.rating)}</div>
+        <div class="who">${esc(r.name)}${badge}</div>
+        <div class="date">${new Date(r.date).toLocaleDateString()}</div>
+        <p>${esc(r.text)}</p>
+        ${r.image ? `<img class="review-photo" src="${r.image}" alt="Photo from ${esc(r.name)}'s review">` : ""}
+        <div class="replies">${repliesHtml}</div>
+        ${replyForm}`;
+      listEl.appendChild(el);
+    });
+
+    // wire up reply buttons
+    listEl.querySelectorAll("[data-reply-btn]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const id = btn.getAttribute("data-reply-btn");
+        const input = listEl.querySelector(`[data-reply-input="${id}"]`);
+        addReply(id, input.value.trim());
+      });
+    });
+  }
+
+  function addReply(reviewId, text) {
+    const user = currentUser();
+    if (!user) { toast("Please log in to reply."); return; }
+    if (!text) { toast("Write a reply first."); return; }
+    const reviews = getReviews();
+    const rev = reviews.find(r => r.id === reviewId);
+    if (!rev) return;
+    rev.replies = rev.replies || [];
+    rev.replies.push({ name: user.name, text, date: new Date().toISOString() });
+    saveReviews(reviews);
+    toast("Reply posted.");
+    render();
+  }
+
+  function render() { renderForm(); renderList(); }
+  render();
+</script>
+</body>
+</html>
