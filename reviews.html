@@ -33,21 +33,20 @@
   <div id="reviews-list"></div>
 </div>
 
-<footer>Chipsy Bakery · Made fresh daily 🧁</footer>
+<footer>Chipsy Bakery · Made fresh daily 🧁 · Reviews powered by Supabase</footer>
 
+<!-- Supabase library (loads from the web) -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="data.js"></script>
 <script src="app.js"></script>
 <script src="account.js"></script>
+<script src="supabase-config.js"></script>
 <script>
-  const REVIEWS_KEY = "chipsy_reviews";
   const listEl = document.getElementById("reviews-list");
   const formEl = document.getElementById("review-form");
 
-  function getReviews() { return load(REVIEWS_KEY, []); }
-  function saveReviews(r) { save(REVIEWS_KEY, r); }
   function stars(n) { return "★★★★★".slice(0, n) + "☆☆☆☆☆".slice(0, 5 - n); }
   function esc(s) { return (s || "").replace(/[<>&]/g, c => ({'<':'&lt;','>':'&gt;','&':'&amp;'}[c])); }
-  function newId() { return "r" + Date.now() + "-" + Math.floor(Math.random() * 10000); }
 
   /* ---------- Review submission form ---------- */
   function renderForm() {
@@ -88,8 +87,6 @@
       </div>`;
 
     document.getElementById("rev-submit").addEventListener("click", submitReview);
-
-    // live thumbnail preview of a chosen photo
     document.getElementById("rev-photo").addEventListener("change", e => {
       const prev = document.getElementById("rev-photo-preview");
       const file = e.target.files[0];
@@ -116,7 +113,7 @@
         const canvas = document.createElement("canvas");
         canvas.width = w; canvas.height = h;
         canvas.getContext("2d").drawImage(img, 0, 0, w, h);
-        cb(canvas.toDataURL("image/jpeg", 0.75));
+        cb(canvas.toDataURL("image/jpeg", 0.72));
       };
       img.onerror = () => cb(null);
       img.src = e.target.result;
@@ -125,7 +122,7 @@
     reader.readAsDataURL(file);
   }
 
-  function submitReview() {
+  async function submitReview() {
     const user = currentUser();
     const name = (user ? user.name : document.getElementById("rev-name").value.trim()) || "Anonymous";
     const email = user ? user.email : "";
@@ -134,23 +131,23 @@
     if (!text) { toast("Please write a short review."); return; }
 
     const file = document.getElementById("rev-photo").files[0];
+    const btn = document.getElementById("rev-submit");
 
-    const finish = (imageData) => {
-      const reviews = getReviews();
-      reviews.push({
-        id: newId(),
-        name, email, rating, text,
-        image: imageData || "",
-        verified: !!(user && hasPurchased(email)),
-        replies: [],
-        date: new Date().toISOString()
+    const finish = async (imageData) => {
+      btn.disabled = true; btn.textContent = "Posting…";
+      const { error } = await sb.from("reviews").insert({
+        name,
+        email: email || null,
+        rating,
+        body: text,
+        image: imageData || null,
+        verified: !!(user && hasPurchased(email))
       });
-      try {
-        saveReviews(reviews);
-      } catch (err) {
-        toast("Couldn't save — storage is full. Try a smaller photo.");
-        return;
-      }
+      btn.disabled = false; btn.textContent = "Post review";
+      if (error) { toast("Couldn't post review: " + error.message); return; }
+      document.getElementById("rev-text").value = "";
+      document.getElementById("rev-photo").value = "";
+      document.getElementById("rev-photo-preview").innerHTML = "";
       toast("Thanks for your review! 🌟");
       render();
     };
@@ -159,25 +156,44 @@
     else { finish(""); }
   }
 
-  /* ---------- Reviews list + replies ---------- */
-  function renderList() {
-    const reviews = getReviews();
-    const user = currentUser();
+  /* ---------- Reviews list + replies (from Supabase) ---------- */
+  async function renderList() {
+    listEl.innerHTML = `<div class="empty">Loading reviews…</div>`;
+
+    let reviews, replies;
+    try {
+      const [rev, rep] = await Promise.all([
+        sb.from("reviews").select("*").order("created_at", { ascending: false }),
+        sb.from("review_replies").select("*").order("created_at", { ascending: true })
+      ]);
+      if (rev.error) throw rev.error;
+      if (rep.error) throw rep.error;
+      reviews = rev.data || [];
+      replies = rep.data || [];
+    } catch (err) {
+      listEl.innerHTML = `<div class="empty">Couldn't load reviews right now.<br>
+        <small style="color:var(--brown)">${esc(err.message || "Check your internet connection.")}</small></div>`;
+      return;
+    }
 
     if (reviews.length === 0) {
       listEl.innerHTML = `<div class="empty">No reviews yet — be the first! 🌟</div>`;
       return;
     }
 
+    const repliesByReview = {};
+    replies.forEach(r => { (repliesByReview[r.review_id] = repliesByReview[r.review_id] || []).push(r); });
+
+    const user = currentUser();
     listEl.innerHTML = "";
-    reviews.slice().reverse().forEach(r => {
+    reviews.forEach(r => {
       const badge = r.verified
         ? `<span class="tag dietary" style="margin-left:8px;vertical-align:middle;">Verified Purchase</span>` : "";
 
-      const repliesHtml = (r.replies || []).map(rep => `
+      const repliesHtml = (repliesByReview[r.id] || []).map(rep => `
         <div class="reply">
-          <div class="who">${esc(rep.name)} <span class="date">· ${new Date(rep.date).toLocaleDateString()}</span></div>
-          <p style="margin:2px 0 0;">${esc(rep.text)}</p>
+          <div class="who">${esc(rep.name)} <span class="date">· ${new Date(rep.created_at).toLocaleDateString()}</span></div>
+          <p style="margin:2px 0 0;">${esc(rep.body)}</p>
         </div>`).join("");
 
       const replyForm = user
@@ -192,34 +208,33 @@
       el.innerHTML = `
         <div class="stars">${stars(r.rating)}</div>
         <div class="who">${esc(r.name)}${badge}</div>
-        <div class="date">${new Date(r.date).toLocaleDateString()}</div>
-        <p>${esc(r.text)}</p>
+        <div class="date">${new Date(r.created_at).toLocaleDateString()}</div>
+        <p>${esc(r.body)}</p>
         ${r.image ? `<img class="review-photo" src="${r.image}" alt="Photo from ${esc(r.name)}'s review">` : ""}
         <div class="replies">${repliesHtml}</div>
         ${replyForm}`;
       listEl.appendChild(el);
     });
 
-    // wire up reply buttons
     listEl.querySelectorAll("[data-reply-btn]").forEach(btn => {
       btn.addEventListener("click", () => {
         const id = btn.getAttribute("data-reply-btn");
         const input = listEl.querySelector(`[data-reply-input="${id}"]`);
-        addReply(id, input.value.trim());
+        addReply(id, input.value.trim(), btn);
       });
     });
   }
 
-  function addReply(reviewId, text) {
+  async function addReply(reviewId, text, btn) {
     const user = currentUser();
     if (!user) { toast("Please log in to reply."); return; }
     if (!text) { toast("Write a reply first."); return; }
-    const reviews = getReviews();
-    const rev = reviews.find(r => r.id === reviewId);
-    if (!rev) return;
-    rev.replies = rev.replies || [];
-    rev.replies.push({ name: user.name, text, date: new Date().toISOString() });
-    saveReviews(reviews);
+    btn.disabled = true;
+    const { error } = await sb.from("review_replies").insert({
+      review_id: reviewId, name: user.name, body: text
+    });
+    btn.disabled = false;
+    if (error) { toast("Couldn't post reply: " + error.message); return; }
     toast("Reply posted.");
     render();
   }
